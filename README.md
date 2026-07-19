@@ -43,10 +43,100 @@ go build -o reality-study.exe
 .\reality-study.exe -listen 127.0.0.1:8443 -sni-map "www.microsoft.com:microsoft.com:443" -show
 ```
 
-### OpenSSL（如已安装）
+### 测试
+
+#### Windows PowerShell
+
+启动服务（在一个 PowerShell 窗口中）：
+
+```powershell
+.\reality-study.exe -show
+```
+
+测试 TLS 连接（在另一个 PowerShell 窗口中）：
+
+```powershell
+# 使用 .NET 的 TcpClient 测试 TCP 连接
+$client = New-Object System.Net.Sockets.TcpClient
+$client.Connect("127.0.0.1", 8443)
+$client.Connected  # 应返回 True
+$client.Close()
+```
+
+```powershell
+# 使用 curl（Windows 10+ 自带）测试 HTTPS
+curl.exe -k https://127.0.0.1:8443
+```
+
+```powershell
+# 测试 TCP 端口是否开放
+Test-NetConnection -ComputerName 127.0.0.1 -Port 8443
+```
+
+```powershell
+# 使用 Invoke-WebRequest 测试 HTTP 响应
+try {
+    $response = Invoke-WebRequest -Uri "https://127.0.0.1:8443" -SkipCertificateCheck
+    $response.StatusCode
+} catch {
+    $_.Exception.Message
+}
+```
+
+#### OpenSSL
 
 ```bash
 openssl s_client -connect 127.0.0.1:8443 -servername www.microsoft.com
+```
+
+##### Windows 默认没有 openssl
+
+PowerShell 里直接敲 `openssl` 会报 `The term 'openssl' is not recognized`。最常见的解决办法:
+
+**方案 A：用 Git Bash 自带的 openssl**
+
+Git for Windows 安装后,`openssl.exe` 通常在:
+
+```text
+C:\Program Files\Git\usr\bin\openssl.exe
+```
+
+在 PowerShell 里可以用完整路径调用,并把它加到 PATH:
+
+```powershell
+$openssl = "C:\Program Files\Git\usr\bin\openssl.exe"
+$env:Path += ";C:\Program Files\Git\usr\bin"
+"Q" | & $openssl s_client -connect 127.0.0.1:8443 -servername www.microsoft.com -showcerts
+```
+
+> `"Q" |` 是为了让 openssl 在打印完证书后退出。PowerShell 不支持 bash 的 `</dev/null` 输入重定向。
+
+**方案 B：单独安装 OpenSSL**
+
+去 [slproweb.com/products/Win32OpenSSL.html](https://slproweb.com/products/Win32OpenSSL.html) 下载 Win64 OpenSSL Light,安装时勾选加入 PATH,重启 PowerShell 后就能直接用 `openssl`。
+
+**方案 C：用 Git Bash 终端**
+
+直接打开 Git Bash,所有博客里的命令都能原样运行,包括 `</dev/null`。
+
+##### PowerShell 不支持 `< /dev/null`
+
+bash 写法:
+
+```bash
+openssl s_client -connect 127.0.0.1:8443 -servername www.microsoft.com -showcerts </dev/null
+```
+
+在 PowerShell 里会报错:
+
+```text
+The '<' operator is reserved for future use.
+```
+
+改成管道:
+
+```powershell
+"Q" | openssl s_client -connect 127.0.0.1:8443 -servername www.microsoft.com -showcerts
 ```
 
 #### curl（通用）
@@ -54,6 +144,22 @@ openssl s_client -connect 127.0.0.1:8443 -servername www.microsoft.com
 ```bash
 curl -k https://127.0.0.1:8443 -H "Host: www.microsoft.com"
 ```
+
+### 用浏览器验证（最直观）
+
+启动 Demo 后,直接用浏览器打开:
+
+```text
+https://127.0.0.1:8443
+```
+
+浏览器会提示证书不安全(因为访问的是 IP 而不是域名,和证书 CN 不匹配),点击"高级"查看证书,应该能看到:
+
+- 颁发对象: `www.microsoft.com`
+- 组织: `Microsoft Corporation`
+- 颁发者: `Microsoft TLS G2 RSA CA OCSP 04` 之类的微软 CA
+
+这就证明 Demo 已经把真实网站的证书透传到了你的浏览器。页面可能显示 `Invalid URL` 或 edgesuite 的错误,这是正常的——这个 Demo 只研究 TLS 层,不处理 HTTP 代理逻辑。
 
 ## 命令行参数
 
