@@ -167,7 +167,7 @@ func handleConn(clientConn net.Conn, defaultDest string, rules []ForwardRule, sh
 	default:
 		// 未知协议:按原始默认目标透传,只做透明中继。
 		log.Printf("[%s] 未知协议,按默认目标 %s 透明转发", remoteAddr, defaultDest)
-		forwardRaw(clientConn, header, defaultDest)
+		forward(clientConn, header, defaultDest, remoteAddr)
 	}
 }
 
@@ -235,7 +235,7 @@ func handleTLS(clientConn net.Conn, header []byte, defaultDest string, rules []F
 	// 本 Demo 为了边界清晰,只执行透明转发。
 	// =====================================================
 
-	forwardTLS(clientConn, record, dest, remoteAddr)
+	forward(clientConn, record, dest, remoteAddr)
 }
 
 // printClientHelloDetails 打印详细解析结果。
@@ -284,8 +284,8 @@ func schemesToStrings(schemes []uint16) []string {
 	return out
 }
 
-// forwardTLS 把完整 ClientHello 发给目标,然后双向透传。
-func forwardTLS(clientConn net.Conn, record []byte, dest, remoteAddr string) {
+// forward 把已读取的首包数据发送到目标,然后双向透传。
+func forward(clientConn net.Conn, firstChunk []byte, dest, remoteAddr string) {
 	destConn, err := net.Dial("tcp", dest)
 	if err != nil {
 		log.Printf("[%s] 连接目标 %s 失败: %v", remoteAddr, dest, err)
@@ -293,28 +293,12 @@ func forwardTLS(clientConn net.Conn, record []byte, dest, remoteAddr string) {
 	}
 	defer destConn.Close()
 
-	if _, err := destConn.Write(record); err != nil {
-		log.Printf("[%s] 转发 ClientHello 失败: %v", remoteAddr, err)
+	if _, err := destConn.Write(firstChunk); err != nil {
+		log.Printf("[%s] 转发首包失败: %v", remoteAddr, err)
 		return
 	}
 
 	log.Printf("[%s] 开始双向透传 <-> %s", remoteAddr, dest)
-	relay(clientConn, destConn)
-}
-
-// forwardRaw 把已读 header 和后续流量原样转发给默认目标。
-func forwardRaw(clientConn net.Conn, header []byte, dest string) {
-	remoteAddr := clientConn.RemoteAddr().String()
-	destConn, err := net.Dial("tcp", dest)
-	if err != nil {
-		log.Printf("[%s] 连接目标 %s 失败: %v", remoteAddr, dest, err)
-		return
-	}
-	defer destConn.Close()
-	if _, err := destConn.Write(header); err != nil {
-		log.Printf("[%s] 转发首包失败: %v", remoteAddr, err)
-		return
-	}
 	relay(clientConn, destConn)
 }
 
@@ -344,7 +328,7 @@ func handlePlainHTTP(clientConn net.Conn, header []byte, defaultDest, remoteAddr
 		break
 	}
 	log.Printf("[%s] 明文 HTTP, 按默认目标 %s 转发", remoteAddr, defaultDest)
-	forwardRaw(clientConn, header, defaultDest)
+	forward(clientConn, header, defaultDest, remoteAddr)
 	_ = tmp
 }
 
