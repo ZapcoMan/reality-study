@@ -1,0 +1,4 @@
+.idea
+nikto-go
+*.exe
+.nikto_history
